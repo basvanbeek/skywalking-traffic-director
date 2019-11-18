@@ -1,0 +1,218 @@
+# Copyright 2017 Istio Authors
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+##################################################################################################
+# Productpage services
+##################################################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    cloud.google.com/neg: '{"exposed_ports":{"8443":{}}}'
+  labels:
+    app: productpage
+    service: productpage
+  name: productpage
+spec:
+  ports:
+  - name: http
+    port: 8443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    app: productpage
+  sessionAffinity: None
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: productpage
+    version: v1
+  name: productpage-v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: productpage
+      version: v1
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/status: '{"version":"8a3877ecd783f3a6d53a2c6a6ac8c63fd3ce0d8f3ec47680bfae38b3898a3b2a","initContainers":["proxy-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-certs","custom-bootstrap-volume"],"imagePullSecrets":null}'
+      creationTimestamp: null
+      labels:
+        app: productpage
+        version: v1
+    spec:
+      containers:
+      - image: docker.io/istio/examples-bookinfo-productpage-v1:1.15.0
+        imagePullPolicy: IfNotPresent
+        name: productpage
+        ports:
+        - containerPort: 9080
+        resources: {}
+      - args:
+        - proxy
+        - sidecar
+        - --domain
+        - $(POD_NAMESPACE).svc.cluster.local
+        - --customConfigFile
+        - /etc/istio/custom-bootstrap/envoy-rev0.json
+        - --binaryPath
+        - /usr/local/bin/envoy
+        - --serviceCluster
+        - productpage.$(POD_NAMESPACE)
+        - --drainDuration
+        - 45s
+        - --parentShutdownDuration
+        - 1m0s
+        - --discoveryAddress
+        - trafficdirector.googleapis.com:80
+        - --dnsRefreshRate
+        - 300s
+        - --connectTimeout
+        - 10s
+        - --proxyAdminPort
+        - "15000"
+        - --concurrency
+        - "2"
+        - --statusPort
+        - "15020"
+        - --applicationPorts
+        - "9080"
+        - --proxyLogLevel
+        - debug
+        env:
+        - name: ISTIO_METAJSON_ANNOTATIONS
+          value: |
+            {"sidecar.istio.io/bootstrapOverride":"istio-custom-bootstrap-config-productpage"}
+        - name: ISTIO_META_TRAFFICDIRECTOR_INTERCEPTION_PORT
+          value: "15001"
+        - name: ISTIO_BOOTSTRAP
+          value: /etc/istio/custom-bootstrap/envoy-rev0.json
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: INSTANCE_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        - name: SERVICE_ACCOUNT
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.serviceAccountName
+        - name: ISTIO_META_CLUSTER_ID
+          value: Kubernetes
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: ISTIO_META_CONFIG_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: ISTIO_META_INTERCEPTION_MODE
+          value: REDIRECT
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: ISTIO_META_ALS_CLUSTER
+          value: skywalking.skywalking
+        image: docker.io/dio123/proxyv2:ea451fc.e5684b2f
+        imagePullPolicy: IfNotPresent
+        name: istio-proxy
+        ports:
+        - containerPort: 15090
+          protocol: TCP
+        - containerPort: 8443
+          name: http-envoy-prom
+          protocol: TCP
+        resources: {}
+        securityContext:
+          runAsGroup: 1337
+          runAsUser: 1337
+        volumeMounts:
+        - mountPath: /etc/certs
+          name: istio-certs
+          readOnly: true
+        - mountPath: /etc/istio/custom-bootstrap
+          name: custom-bootstrap-volume
+      initContainers:
+      - args:
+        - -p
+        - "15001"
+        - -z
+        - "15006"
+        - -u
+        - "1337"
+        - -m
+        - REDIRECT
+        - -i
+        - '*'
+        - -x
+        - ""
+        - -b
+        - "9080"
+        - -d
+        - "15020"
+        image: docker.io/tetrate/proxy_init:0.6.6-istio-90c06491b
+        imagePullPolicy: IfNotPresent
+        name: proxy-init
+        resources: {}
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+          runAsNonRoot: false
+          runAsUser: 0
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: istio-envoy
+      - name: istio-certs
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: istio.default
+      - configMap:
+          name: istio-custom-bootstrap-config-productpage
+        name: custom-bootstrap-volume
+status: {}
+---

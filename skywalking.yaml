@@ -1,0 +1,324 @@
+---
+# Source: skywalking/templates/oap-serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: skywalking
+    chart: skywalking-0.1.2
+    component: "skywalking-oap"
+    heritage: Tiller
+    release: skywalking
+  name: skywalking
+
+---
+# Source: skywalking/templates/oap-role.yaml
+
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: skywalking
+  labels:
+    app: skywalking
+    chart: "skywalking-0.1.2"
+    release: "skywalking"
+    heritage: "Tiller"
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "watch", "list"]
+---
+# Source: skywalking/templates/oap-rolebinding.yaml
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: skywalking
+  labels:
+    app: skywalking
+    chart: "skywalking-0.1.2"
+    release: "skywalking"
+    heritage: "Tiller"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: skywalking
+subjects:
+  - kind: ServiceAccount
+    name: skywalking
+    namespace: skywalking
+---
+# Source: skywalking/templates/oap-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: skywalking
+  labels:
+    app: skywalking
+    chart: skywalking-0.1.2
+    component: "skywalking-oap"
+    heritage: Tiller
+    release: skywalking
+spec:
+  type: ClusterIP
+  ports:
+  - port: 12800
+    name: rest
+  - port: 11800
+    name: grpc
+  - port: 9001
+    name: stdout
+  selector:
+    app: skywalking
+    component: "skywalking-oap"
+    release: skywalking
+
+---
+# Source: skywalking/templates/ui-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: skywalking
+    chart: skywalking-0.1.2
+    component: "skywalking-ui"
+    heritage: Tiller
+    release: skywalking
+  name: skywalking-ui
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+
+  selector:
+    app: skywalking
+    component: "skywalking-ui"
+    release: skywalking
+
+---
+# Source: skywalking/templates/oap-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: skywalking
+    chart: skywalking-0.1.2
+    component: "skywalking-oap"
+    heritage: Tiller
+    release: skywalking
+  name: skywalking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: skywalking
+      component: "skywalking-oap"
+      release: skywalking
+  template:
+    metadata:
+      labels:
+        app: skywalking
+        component: "skywalking-oap"
+        release: skywalking
+    spec:
+      serviceAccountName: oap-service-account
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: "skywalking"
+                  release: "skywalking"
+                  component: "skywalking-oap"
+      initContainers:
+      - name: wait-for-elasticsearch
+        image: busybox:1.30
+        imagePullPolicy: IfNotPresent
+        command: ['sh', '-c', 'for i in $(seq 1 60); do nc -z -w3 elasticsearch 9200 && exit 0 || sleep 5; done; exit 1']
+      containers:
+      - name: skywalking-oap
+        image: "apache/skywalking-oap-server:6.4.0"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 11800
+          name: grpc
+        - containerPort: 12800
+          name: rest
+        - containerPort: 9001
+          name: stdout
+        env:
+        - name: JAVA_OPTS
+          value: "-Xmx2g -Xms2g -Dmode=no-init"
+        - name: SW_CLUSTER
+          value: kubernetes
+        - name: SW_CLUSTER_K8S_NAMESPACE ### change this to specific namespace
+          value: "skywalking"
+        - name: SW_CLUSTER_K8S_LABEL
+          value: "app=skywalking,release=skywalking,component=skywalking-oap"
+        - name: SKYWALKING_COLLECTOR_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: SW_STORAGE
+          value: elasticsearch
+        - name: SW_STORAGE_ES_CLUSTER_NODES
+          value: "elasticsearch:9200"
+        - name: SW_STORAGE
+          value: elasticsearch
+        - name: SW_ENVOY_ALS_ENABLED
+          value: "true"
+        - name: SW_STORAGE_ES_CLUSTER_NODES
+          value: "elasticsearch:9200"
+        - name: SW_TELEMETRY
+          value: prometheus
+
+---
+# Source: skywalking/templates/ui-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skywalking-ui
+  labels:
+    app: skywalking
+    chart: skywalking-0.1.2
+    component: "skywalking-ui"
+    heritage: Tiller
+    release: skywalking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: skywalking
+      component: "skywalking-ui"
+      release: skywalking
+  template:
+    metadata:
+      labels:
+        app: skywalking
+        component: "skywalking-ui"
+        release: skywalking
+    spec:
+      serviceAccountName: oap-service-account
+      containers:
+      - name: skywalking-ui
+        image: apache/skywalking-ui:6.4.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: page
+        env:
+        - name: SW_OAP_ADDRESS
+          value: skywalking:12800
+
+---
+# Source: skywalking/templates/es-init.job.yaml
+# https://docs.sentry.io/server/installation/docker/#running-migrations
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "skywalking-es-init"
+  labels:
+    app: skywalking
+    chart: skywalking-0.1.2
+    component: "skywalking-job"
+    heritage: Tiller
+    release: skywalking
+spec:
+  template:
+    metadata:
+      name: "skywalking-es-init"
+      labels:
+        app: skywalking
+        component: "skywalking-job"
+        release: skywalking
+    spec:
+      restartPolicy: Never
+      initContainers:
+      - name: wait-for-elasticsearch
+        image: busybox:1.30
+        imagePullPolicy: IfNotPresent
+        command: ['sh', '-c', 'for i in $(seq 1 60); do nc -z -w3 elasticsearch 9200 && exit 0 || sleep 5; done; exit 1']
+      containers:
+      - name: skywalking-oap
+        image: "apache/skywalking-oap-server:6.4.0"
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: JAVA_OPTS
+          value: "-Xmx2g -Xms2g -Dmode=init"
+        - name: SW_STORAGE
+          value: elasticsearch
+        - name: SW_STORAGE_ES_CLUSTER_NODES
+          value: "elasticsearch:9200"
+
+---
+# Source: skywalking/templates/oap-clusterrole.yaml
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: skywalking
+  labels:
+    app: skywalking
+    release: skywalking
+    heritage: Tiller
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "watch", "list"]
+- apiGroups: ["extensions"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "watch", "list"]
+
+---
+# Source: skywalking/templates/oap-clusterrolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: skywalking
+  labels:
+    app: skywalking
+    release: skywalking
+    heritage: Tiller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: skywalking
+subjects:
+- kind: ServiceAccount
+  name: demo-oap
+  namespace: skywalking
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: oap-service-account
+  namespace: skywalking
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-oap
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: demo-oap
+subjects:
+- kind: ServiceAccount
+  name: oap-service-account
+  namespace: skywalking
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: demo-oap
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "watch", "list"]
+- apiGroups: ["extensions"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "watch", "list"]

@@ -1,0 +1,996 @@
+# Copyright 2017 Istio Authors
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+##################################################################################################
+# Details service
+##################################################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: details
+  labels:
+    app: details
+    service: details
+  annotations:
+    sidecar.istio.io/bootstrapOverride: "istio-custom-bootstrap-config3"
+spec:
+  ports:
+  - port: 8443
+    name: http
+  selector:
+    app: details
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bookinfo-details
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: details
+    version: v1
+  name: details-v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: details
+      version: v1
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/status: '{"version":"58679fed17c481e77d1aec3e04b987b39bcb4a2d62754bda5a2e1b2a7477cb3b","initContainers":["proxy-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-certs","custom-bootstrap-volume"],"imagePullSecrets":null}'
+      creationTimestamp: null
+      labels:
+        app: details
+        version: v1
+    spec:
+      containers:
+      - image: docker.io/istio/examples-bookinfo-details-v1:1.15.0
+        imagePullPolicy: IfNotPresent
+        name: details
+        ports:
+        - containerPort: 9080
+        resources: {}
+      - args:
+        - proxy
+        - sidecar
+        - --domain
+        - $(POD_NAMESPACE).svc.cluster.local
+        - --customConfigFile
+        - /etc/istio/custom-bootstrap/envoy-rev0.json
+        - --binaryPath
+        - /usr/local/bin/envoy
+        - --serviceCluster
+        - productpage.$(POD_NAMESPACE)
+        - --drainDuration
+        - 45s
+        - --parentShutdownDuration
+        - 1m0s
+        - --discoveryAddress
+        - trafficdirector.googleapis.com:80
+        - --dnsRefreshRate
+        - 300s
+        - --connectTimeout
+        - 10s
+        - --proxyAdminPort
+        - "15000"
+        - --concurrency
+        - "2"
+        - --statusPort
+        - "15020"
+        - --applicationPorts
+        - "9080"
+        - --proxyLogLevel
+        - debug
+        env:
+        - name: ISTIO_METAJSON_ANNOTATIONS
+          value: |
+            {"sidecar.istio.io/bootstrapOverride":"istio-custom-bootstrap-config-others"}
+        - name: ISTIO_META_TRAFFICDIRECTOR_INTERCEPTION_PORT
+          value: "15001"
+        - name: ISTIO_BOOTSTRAP
+          value: /etc/istio/custom-bootstrap/envoy-rev0.json
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: INSTANCE_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        - name: SERVICE_ACCOUNT
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.serviceAccountName
+        - name: ISTIO_META_CLUSTER_ID
+          value: Kubernetes
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: ISTIO_META_CONFIG_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: ISTIO_META_INTERCEPTION_MODE
+          value: REDIRECT
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: ISTIO_META_ALS_CLUSTER
+          value: skywalking.skywalking
+        image: docker.io/dio123/proxyv2:ea451fc.e5684b2f
+        imagePullPolicy: IfNotPresent
+        name: istio-proxy
+        ports:
+        - containerPort: 15090
+          protocol: TCP
+        - containerPort: 8443
+          name: http-envoy-prom
+          protocol: TCP
+        resources: {}
+        securityContext:
+          runAsGroup: 1337
+          runAsUser: 1337
+        volumeMounts:
+        - mountPath: /etc/certs
+          name: istio-certs
+          readOnly: true
+        - mountPath: /etc/istio/custom-bootstrap
+          name: custom-bootstrap-volume
+      initContainers:
+      - args:
+        - -p
+        - "15001"
+        - -z
+        - "15006"
+        - -u
+        - "1337"
+        - -m
+        - REDIRECT
+        - -i
+        - '*'
+        - -x
+        - ""
+        - -b
+        - "9080"
+        - -d
+        - "15020"
+        image: docker.io/tetrate/proxy_init:0.6.6-istio-90c06491b
+        imagePullPolicy: IfNotPresent
+        name: proxy-init
+        resources: {}
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+          runAsNonRoot: false
+          runAsUser: 0
+      serviceAccountName: bookinfo-details
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: istio-envoy
+      - name: istio-certs
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: istio.default
+      - configMap:
+          name: istio-custom-bootstrap-config-others
+        name: custom-bootstrap-volume
+status: {}
+---
+##################################################################################################
+# Ratings service
+##################################################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratings
+  labels:
+    app: ratings
+    service: ratings
+  annotations:
+    sidecar.istio.io/bootstrapOverride: "istio-custom-bootstrap-config3"
+spec:
+  ports:
+  - port: 8443
+    name: http
+  selector:
+    app: ratings
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bookinfo-ratings
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: ratings
+    version: v1
+  name: ratings-v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ratings
+      version: v1
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/status: '{"version":"58679fed17c481e77d1aec3e04b987b39bcb4a2d62754bda5a2e1b2a7477cb3b","initContainers":["proxy-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-certs","custom-bootstrap-volume"],"imagePullSecrets":null}'
+      creationTimestamp: null
+      labels:
+        app: ratings
+        version: v1
+    spec:
+      containers:
+      - image: docker.io/istio/examples-bookinfo-ratings-v1:1.15.0
+        imagePullPolicy: IfNotPresent
+        name: ratings
+        ports:
+        - containerPort: 9080
+        resources: {}
+      - args:
+        - proxy
+        - sidecar
+        - --domain
+        - $(POD_NAMESPACE).svc.cluster.local
+        - --customConfigFile
+        - /etc/istio/custom-bootstrap/envoy-rev0.json
+        - --binaryPath
+        - /usr/local/bin/envoy
+        - --serviceCluster
+        - productpage.$(POD_NAMESPACE)
+        - --drainDuration
+        - 45s
+        - --parentShutdownDuration
+        - 1m0s
+        - --discoveryAddress
+        - trafficdirector.googleapis.com:80
+        - --dnsRefreshRate
+        - 300s
+        - --connectTimeout
+        - 10s
+        - --proxyAdminPort
+        - "15000"
+        - --concurrency
+        - "2"
+        - --statusPort
+        - "15020"
+        - --applicationPorts
+        - "9080"
+        - --proxyLogLevel
+        - debug
+        env:
+        - name: ISTIO_METAJSON_ANNOTATIONS
+          value: |
+            {"sidecar.istio.io/bootstrapOverride":"istio-custom-bootstrap-config-others"}
+        - name: ISTIO_META_TRAFFICDIRECTOR_INTERCEPTION_PORT
+          value: "15001"
+        - name: ISTIO_BOOTSTRAP
+          value: /etc/istio/custom-bootstrap/envoy-rev0.json
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: INSTANCE_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        - name: SERVICE_ACCOUNT
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.serviceAccountName
+        - name: ISTIO_META_CLUSTER_ID
+          value: Kubernetes
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: ISTIO_META_CONFIG_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: ISTIO_META_INTERCEPTION_MODE
+          value: REDIRECT
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: ISTIO_META_ALS_CLUSTER
+          value: skywalking.skywalking
+        image: docker.io/dio123/proxyv2:ea451fc.e5684b2f
+        imagePullPolicy: IfNotPresent
+        name: istio-proxy
+        ports:
+        - containerPort: 15090
+          protocol: TCP
+        - containerPort: 8443
+          name: http-envoy-prom
+          protocol: TCP
+        resources: {}
+        securityContext:
+          runAsGroup: 1337
+          runAsUser: 1337
+        volumeMounts:
+        - mountPath: /etc/certs
+          name: istio-certs
+          readOnly: true
+        - mountPath: /etc/istio/custom-bootstrap
+          name: custom-bootstrap-volume
+      initContainers:
+      - args:
+        - -p
+        - "15001"
+        - -z
+        - "15006"
+        - -u
+        - "1337"
+        - -m
+        - REDIRECT
+        - -i
+        - '*'
+        - -x
+        - ""
+        - -b
+        - "9080"
+        - -d
+        - "15020"
+        image: docker.io/tetrate/proxy_init:0.6.6-istio-90c06491b
+        imagePullPolicy: IfNotPresent
+        name: proxy-init
+        resources: {}
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+          runAsNonRoot: false
+          runAsUser: 0
+      serviceAccountName: bookinfo-ratings
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: istio-envoy
+      - name: istio-certs
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: istio.default
+      - configMap:
+          name: istio-custom-bootstrap-config-others
+        name: custom-bootstrap-volume
+status: {}
+---
+##################################################################################################
+# Reviews service
+##################################################################################################
+apiVersion: v1
+kind: Service
+metadata:
+  name: reviews
+  labels:
+    app: reviews
+    service: reviews
+  annotations:
+    sidecar.istio.io/bootstrapOverride: "istio-custom-bootstrap-config3"
+spec:
+  ports:
+  - port: 8443
+    name: http
+  selector:
+    app: reviews
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bookinfo-reviews
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: reviews
+    version: v1
+  name: reviews-v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reviews
+      version: v1
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/status: '{"version":"58679fed17c481e77d1aec3e04b987b39bcb4a2d62754bda5a2e1b2a7477cb3b","initContainers":["proxy-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-certs","custom-bootstrap-volume"],"imagePullSecrets":null}'
+      creationTimestamp: null
+      labels:
+        app: reviews
+        version: v1
+    spec:
+      containers:
+      - image: docker.io/istio/examples-bookinfo-reviews-v1:1.15.0
+        imagePullPolicy: IfNotPresent
+        name: reviews
+        ports:
+        - containerPort: 9080
+        resources: {}
+      - args:
+        - proxy
+        - sidecar
+        - --domain
+        - $(POD_NAMESPACE).svc.cluster.local
+        - --customConfigFile
+        - /etc/istio/custom-bootstrap/envoy-rev0.json
+        - --binaryPath
+        - /usr/local/bin/envoy
+        - --serviceCluster
+        - productpage.$(POD_NAMESPACE)
+        - --drainDuration
+        - 45s
+        - --parentShutdownDuration
+        - 1m0s
+        - --discoveryAddress
+        - trafficdirector.googleapis.com:80
+        - --dnsRefreshRate
+        - 300s
+        - --connectTimeout
+        - 10s
+        - --proxyAdminPort
+        - "15000"
+        - --concurrency
+        - "2"
+        - --statusPort
+        - "15020"
+        - --applicationPorts
+        - "9080"
+        - --proxyLogLevel
+        - debug
+        env:
+        - name: ISTIO_METAJSON_ANNOTATIONS
+          value: |
+            {"sidecar.istio.io/bootstrapOverride":"istio-custom-bootstrap-config-others"}
+        - name: ISTIO_META_TRAFFICDIRECTOR_INTERCEPTION_PORT
+          value: "15001"
+        - name: ISTIO_BOOTSTRAP
+          value: /etc/istio/custom-bootstrap/envoy-rev0.json
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: INSTANCE_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        - name: SERVICE_ACCOUNT
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.serviceAccountName
+        - name: ISTIO_META_CLUSTER_ID
+          value: Kubernetes
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: ISTIO_META_CONFIG_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: ISTIO_META_INTERCEPTION_MODE
+          value: REDIRECT
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: ISTIO_META_ALS_CLUSTER
+          value: skywalking.skywalking
+        image: docker.io/dio123/proxyv2:ea451fc.e5684b2f
+        imagePullPolicy: IfNotPresent
+        name: istio-proxy
+        ports:
+        - containerPort: 15090
+          protocol: TCP
+        - containerPort: 8443
+          name: http-envoy-prom
+          protocol: TCP
+        resources: {}
+        securityContext:
+          runAsGroup: 1337
+          runAsUser: 1337
+        volumeMounts:
+        - mountPath: /etc/certs
+          name: istio-certs
+          readOnly: true
+        - mountPath: /etc/istio/custom-bootstrap
+          name: custom-bootstrap-volume
+      initContainers:
+      - args:
+        - -p
+        - "15001"
+        - -z
+        - "15006"
+        - -u
+        - "1337"
+        - -m
+        - REDIRECT
+        - -i
+        - '*'
+        - -x
+        - ""
+        - -b
+        - "9080"
+        - -d
+        - "15020"
+        image: docker.io/tetrate/proxy_init:0.6.6-istio-90c06491b
+        imagePullPolicy: IfNotPresent
+        name: proxy-init
+        resources: {}
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+          runAsNonRoot: false
+          runAsUser: 0
+      serviceAccountName: bookinfo-reviews
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: istio-envoy
+      - name: istio-certs
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: istio.default
+      - configMap:
+          name: istio-custom-bootstrap-config-others
+        name: custom-bootstrap-volume
+status: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: reviews
+    version: v2
+  name: reviews-v2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reviews
+      version: v2
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/status: '{"version":"58679fed17c481e77d1aec3e04b987b39bcb4a2d62754bda5a2e1b2a7477cb3b","initContainers":["proxy-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-certs","custom-bootstrap-volume"],"imagePullSecrets":null}'
+      creationTimestamp: null
+      labels:
+        app: reviews
+        version: v2
+    spec:
+      containers:
+      - image: docker.io/istio/examples-bookinfo-reviews-v2:1.15.0
+        imagePullPolicy: IfNotPresent
+        name: reviews
+        ports:
+        - containerPort: 9080
+        resources: {}
+      - args:
+        - proxy
+        - sidecar
+        - --domain
+        - $(POD_NAMESPACE).svc.cluster.local
+        - --customConfigFile
+        - /etc/istio/custom-bootstrap/envoy-rev0.json
+        - --binaryPath
+        - /usr/local/bin/envoy
+        - --serviceCluster
+        - productpage.$(POD_NAMESPACE)
+        - --drainDuration
+        - 45s
+        - --parentShutdownDuration
+        - 1m0s
+        - --discoveryAddress
+        - trafficdirector.googleapis.com:80
+        - --dnsRefreshRate
+        - 300s
+        - --connectTimeout
+        - 10s
+        - --proxyAdminPort
+        - "15000"
+        - --concurrency
+        - "2"
+        - --statusPort
+        - "15020"
+        - --applicationPorts
+        - "9080"
+        - --proxyLogLevel
+        - debug
+        env:
+        - name: ISTIO_METAJSON_ANNOTATIONS
+          value: |
+            {"sidecar.istio.io/bootstrapOverride":"istio-custom-bootstrap-config-others"}
+        - name: ISTIO_META_TRAFFICDIRECTOR_INTERCEPTION_PORT
+          value: "15001"
+        - name: ISTIO_BOOTSTRAP
+          value: /etc/istio/custom-bootstrap/envoy-rev0.json
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: INSTANCE_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        - name: SERVICE_ACCOUNT
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.serviceAccountName
+        - name: ISTIO_META_CLUSTER_ID
+          value: Kubernetes
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: ISTIO_META_CONFIG_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: ISTIO_META_INTERCEPTION_MODE
+          value: REDIRECT
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: ISTIO_META_ALS_CLUSTER
+          value: skywalking.skywalking
+        image: docker.io/dio123/proxyv2:ea451fc.e5684b2f
+        imagePullPolicy: IfNotPresent
+        name: istio-proxy
+        ports:
+        - containerPort: 15090
+          protocol: TCP
+        - containerPort: 8443
+          name: http-envoy-prom
+          protocol: TCP
+        resources: {}
+        securityContext:
+          runAsGroup: 1337
+          runAsUser: 1337
+        volumeMounts:
+        - mountPath: /etc/certs
+          name: istio-certs
+          readOnly: true
+        - mountPath: /etc/istio/custom-bootstrap
+          name: custom-bootstrap-volume
+      initContainers:
+      - args:
+        - -p
+        - "15001"
+        - -z
+        - "15006"
+        - -u
+        - "1337"
+        - -m
+        - REDIRECT
+        - -i
+        - '*'
+        - -x
+        - ""
+        - -b
+        - "9080"
+        - -d
+        - "15020"
+        image: docker.io/tetrate/proxy_init:0.6.6-istio-90c06491b
+        imagePullPolicy: IfNotPresent
+        name: proxy-init
+        resources: {}
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+          runAsNonRoot: false
+          runAsUser: 0
+      serviceAccountName: bookinfo-reviews
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: istio-envoy
+      - name: istio-certs
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: istio.default
+      - configMap:
+          name: istio-custom-bootstrap-config-others
+        name: custom-bootstrap-volume
+status: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: reviews
+    version: v3
+  name: reviews-v3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reviews
+      version: v3
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/status: '{"version":"58679fed17c481e77d1aec3e04b987b39bcb4a2d62754bda5a2e1b2a7477cb3b","initContainers":["proxy-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-certs","custom-bootstrap-volume"],"imagePullSecrets":null}'
+      creationTimestamp: null
+      labels:
+        app: reviews
+        version: v3
+    spec:
+      containers:
+      - image: docker.io/istio/examples-bookinfo-reviews-v3:1.15.0
+        imagePullPolicy: IfNotPresent
+        name: reviews
+        ports:
+        - containerPort: 9080
+        resources: {}
+      - args:
+        - proxy
+        - sidecar
+        - --domain
+        - $(POD_NAMESPACE).svc.cluster.local
+        - --customConfigFile
+        - /etc/istio/custom-bootstrap/envoy-rev0.json
+        - --binaryPath
+        - /usr/local/bin/envoy
+        - --serviceCluster
+        - productpage.$(POD_NAMESPACE)
+        - --drainDuration
+        - 45s
+        - --parentShutdownDuration
+        - 1m0s
+        - --discoveryAddress
+        - trafficdirector.googleapis.com:80
+        - --dnsRefreshRate
+        - 300s
+        - --connectTimeout
+        - 10s
+        - --proxyAdminPort
+        - "15000"
+        - --concurrency
+        - "2"
+        - --statusPort
+        - "15020"
+        - --applicationPorts
+        - "9080"
+        - --proxyLogLevel
+        - debug
+        env:
+        - name: ISTIO_METAJSON_ANNOTATIONS
+          value: |
+            {"sidecar.istio.io/bootstrapOverride":"istio-custom-bootstrap-config-others"}
+        - name: ISTIO_META_TRAFFICDIRECTOR_INTERCEPTION_PORT
+          value: "15001"
+        - name: ISTIO_BOOTSTRAP
+          value: /etc/istio/custom-bootstrap/envoy-rev0.json
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: INSTANCE_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        - name: SERVICE_ACCOUNT
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.serviceAccountName
+        - name: ISTIO_META_CLUSTER_ID
+          value: Kubernetes
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: ISTIO_META_CONFIG_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: ISTIO_META_INTERCEPTION_MODE
+          value: REDIRECT
+        - name: ISTIO_META_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: ISTIO_META_ALS_CLUSTER
+          value: skywalking.skywalking
+        image: docker.io/dio123/proxyv2:ea451fc.e5684b2f
+        imagePullPolicy: IfNotPresent
+        name: istio-proxy
+        ports:
+        - containerPort: 15090
+          protocol: TCP
+        - containerPort: 8443
+          name: http-envoy-prom
+          protocol: TCP
+        resources: {}
+        securityContext:
+          runAsGroup: 1337
+          runAsUser: 1337
+        volumeMounts:
+        - mountPath: /etc/certs
+          name: istio-certs
+          readOnly: true
+        - mountPath: /etc/istio/custom-bootstrap
+          name: custom-bootstrap-volume
+      initContainers:
+      - args:
+        - -p
+        - "15001"
+        - -z
+        - "15006"
+        - -u
+        - "1337"
+        - -m
+        - REDIRECT
+        - -i
+        - '*'
+        - -x
+        - ""
+        - -b
+        - "9080"
+        - -d
+        - "15020"
+        image: docker.io/tetrate/proxy_init:0.6.6-istio-90c06491b
+        imagePullPolicy: IfNotPresent
+        name: proxy-init
+        resources: {}
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+          runAsNonRoot: false
+          runAsUser: 0
+      serviceAccountName: bookinfo-reviews
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: istio-envoy
+      - name: istio-certs
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: istio.default
+      - configMap:
+          name: istio-custom-bootstrap-config-others
+        name: custom-bootstrap-volume
+status: {}
+---

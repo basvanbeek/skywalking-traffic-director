@@ -1,0 +1,151 @@
+template: |-
+  initContainers:
+  - name: proxy-init
+    image: docker.io/tetrate/proxy_init:0.6.6-istio-90c06491b
+    imagePullPolicy: IfNotPresent
+    args:
+    - -p
+    - "15001"
+    - -z
+    - "15006"
+    - -u
+    - "1337"
+    - -m
+    - REDIRECT
+    - -i
+    - '*'
+    - -x
+    - ""
+    - -o
+    - "8443"
+    - -b
+    - "9080"
+    - -d
+    - "15020"
+    securityContext:
+      capabilities:
+        add:
+        - NET_ADMIN
+      runAsNonRoot: false
+      runAsUser: 0
+  containers:
+  - name: istio-proxy
+    image: gcr.io/tetratelabs/proxyv2:ea451fc.e5684b2f
+    imagePullPolicy: IfNotPresent
+    args:
+    - proxy
+    - sidecar
+    - --domain
+    - $(POD_NAMESPACE).svc.cluster.local
+    - --customConfigFile 
+    - /etc/istio/custom-bootstrap/envoy-rev0.json
+    - --binaryPath
+    - /usr/local/bin/envoy
+    - --serviceCluster
+    - productpage.$(POD_NAMESPACE)
+    - --drainDuration
+    - 45s
+    - --parentShutdownDuration
+    - 1m0s
+    - --discoveryAddress
+    - trafficdirector.googleapis.com:80
+    - --dnsRefreshRate
+    - 300s
+    - --connectTimeout
+    - 10s
+    - --proxyAdminPort
+    - "15000"
+    - --concurrency
+    - "2"
+    - --statusPort
+    - "15020"
+    - --applicationPorts
+    - "9080"
+    - --proxyLogLevel
+    - debug
+    env:
+    - name: ISTIO_METAJSON_ANNOTATIONS
+      value: |
+        {"sidecar.istio.io/bootstrapOverride":"istio-custom-bootstrap-config-productpage"}
+    - name: ISTIO_META_TRAFFICDIRECTOR_INTERCEPTION_PORT
+      value: "15001"
+    - name: ISTIO_BOOTSTRAP
+      value: "/etc/istio/custom-bootstrap/envoy-rev0.json"
+    - name: NODE_NAME
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: spec.nodeName
+    - name: POD_NAME
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.name
+    - name: POD_NAMESPACE
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.namespace
+    - name: INSTANCE_IP
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: status.podIP
+    - name: HOST_IP
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: status.hostIP
+    - name: SERVICE_ACCOUNT
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: spec.serviceAccountName
+    - name: ISTIO_META_CLUSTER_ID
+      value: Kubernetes
+    - name: ISTIO_META_POD_NAME
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.name
+    - name: ISTIO_META_CONFIG_NAMESPACE
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.namespace
+    - name: ISTIO_META_INTERCEPTION_MODE
+      value: REDIRECT
+    - name: ISTIO_META_POD_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+    - name: ISTIO_META_ALS_CLUSTER
+      value: skywalking.skywalking
+    ports:
+    - containerPort: 15090
+      protocol: TCP
+    - containerPort: 8443
+      name: http-envoy-prom
+      protocol: TCP
+    securityContext:
+      runAsUser: 1337    
+      runAsGroup: 1337
+    volumeMounts:
+      - mountPath: /etc/certs
+        name: istio-certs
+        readOnly: true
+      - mountPath: /etc/istio/custom-bootstrap
+        name: custom-bootstrap-volume
+        readOnly: false
+  volumes:
+  - name: istio-envoy
+    emptyDir:
+      medium: Memory
+  - name: istio-certs
+    secret:
+      defaultMode: 420
+      optional: true
+      secretName: istio.default
+  - configMap:
+      name: istio-custom-bootstrap-config-productpage
+    name: custom-bootstrap-volume
