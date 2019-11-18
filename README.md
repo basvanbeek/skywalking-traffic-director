@@ -4,7 +4,7 @@
 
 The object of this is to demonstrate Observability of your applications using upstream Skywalking. We demonstrate this on GCP project that has Traffic Director enabled. We deploy skywalking in _skywalking_ namespace bookinfo in _bookinfo_ namespace.
 
-
+![Alt text](deployment.jpg?raw=true "Title")
 
 #### Deployment Steps
 
