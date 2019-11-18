@@ -155,7 +155,7 @@ spec:
               fieldPath: metadata.name
         - name: ISTIO_META_ALS_CLUSTER
           value: skywalking.skywalking
-        image: docker.io/dio123/proxyv2:ea451fc.e5684b2f
+        image: gcr.io/tetratelabs/proxyv2:ea451fc.e5684b2f
         imagePullPolicy: IfNotPresent
         name: istio-proxy
         ports:
